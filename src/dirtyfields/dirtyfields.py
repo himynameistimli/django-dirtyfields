@@ -1,9 +1,9 @@
-# Adapted from https://stackoverflow.com/questions/110803/dirty-fields-in-django
 from copy import deepcopy
 
 from django.core.exceptions import ValidationError
 from django.db.models.expressions import BaseExpression
 from django.db.models.expressions import Combinable
+from django.db.models.fields.files import FileField
 from django.db.models.signals import post_save, m2m_changed
 
 from .compare import raw_compare, compare_states, normalise_value
@@ -38,7 +38,8 @@ class DirtyFieldsMixin(object):
         reset_state(sender=self.__class__, instance=self)
 
     def refresh_from_db(self, using=None, fields=None):
-        super(DirtyFieldsMixin, self).refresh_from_db(using=using, fields=fields)
+        super(DirtyFieldsMixin, self).refresh_from_db(
+            using=using, fields=fields)
         reset_state(sender=self.__class__, instance=self, update_fields=fields)
 
     def _connect_m2m_relations(self):
@@ -88,6 +89,11 @@ class DirtyFieldsMixin(object):
             if isinstance(field_value, memoryview):
                 # psycopg2 returns uncopyable type buffer for bytea
                 field_value = bytes(field_value)
+            if isinstance(field_value, FileField):
+                try:
+                    field_value = field_value.path
+                except:
+                    field_value = field_value.name
 
             # Explanation of copy usage here :
             # https://github.com/romgar/django-dirtyfields/commit/efd0286db8b874b5d6bd06c9e903b1a0c9cc6b00
@@ -103,23 +109,28 @@ class DirtyFieldsMixin(object):
                 if self.FIELDS_TO_CHECK and (f.attname not in self.FIELDS_TO_CHECK):
                     continue
 
-                m2m_fields[f.attname] = set([obj.pk for obj in getattr(self, f.attname).all()])
+                m2m_fields[f.attname] = set(
+                    [obj.pk for obj in getattr(self, f.attname).all()])
 
         return m2m_fields
 
     def get_dirty_fields(self, check_relationship=False, check_m2m=None, verbose=False):
         if self._state.adding:
             # If the object has not yet been saved in the database, all fields are considered dirty
-            # for consistency (see https://github.com/romgar/django-dirtyfields/issues/65 for more details)
+            # for consistency (see
+            # https://github.com/romgar/django-dirtyfields/issues/65 for more
+            # details)
             pk_specified = self.pk is not None
-            initial_dict = self._as_dict(check_relationship, include_primary_key=pk_specified)
+            initial_dict = self._as_dict(
+                check_relationship, include_primary_key=pk_specified)
             if verbose:
                 initial_dict = {key: {'saved': None, 'current': self.normalise_function[0](value)}
                                 for key, value in initial_dict.items()}
             return initial_dict
 
         if check_m2m is not None and not self.ENABLE_M2M_CHECK:
-            raise ValueError("You can't check m2m fields if ENABLE_M2M_CHECK is set to False")
+            raise ValueError(
+                "You can't check m2m fields if ENABLE_M2M_CHECK is set to False")
 
         modified_fields = compare_states(self._as_dict(check_relationship),
                                          self._original_state,
@@ -135,7 +146,8 @@ class DirtyFieldsMixin(object):
 
         if not verbose:
             # Keeps backward compatibility with previous function return
-            modified_fields = {key: self.normalise_function[0](value['saved']) for key, value in modified_fields.items()}
+            modified_fields = {key: self.normalise_function[0](
+                value['saved']) for key, value in modified_fields.items()}
 
         return modified_fields
 
