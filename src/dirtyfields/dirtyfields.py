@@ -3,6 +3,7 @@ from copy import deepcopy
 from django.core.exceptions import ValidationError
 from django.db.models.expressions import BaseExpression
 from django.db.models.expressions import Combinable
+from django.db.models.fields.files import FileField
 from django.db.models.signals import post_save, m2m_changed
 
 from .compare import raw_compare, compare_states, normalise_value
@@ -89,14 +90,15 @@ class DirtyFieldsMixin(object):
                 # psycopg2 returns uncopyable type buffer for bytea
                 field_value = bytes(field_value)
 
+            if isinstance(field, FileField):
+                try:
+                    field_value = field_value.path
+                except Exception:
+                    field_value = field_value.name
+
             # Explanation of copy usage here :
             # https://github.com/romgar/django-dirtyfields/commit/efd0286db8b874b5d6bd06c9e903b1a0c9cc6b00
-            try:
-                all_field[field.name] = deepcopy(field_value)
-            except Exception:
-                # Bad, but at least things still seem to work with this
-                # workaround
-                pass
+            all_field[field.name] = deepcopy(field_value)
 
         return all_field
 
